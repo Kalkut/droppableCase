@@ -34,6 +34,7 @@ sand.define('Case', [
 			this.img.style.top = 0 + 'px';
 			this.type = options.type;
 			this.fit = options.fit // Mode libre, pas de restriction sur le mouvement ou sur le zoom de l'image
+			this.frozen = options.frozen; // Mode image fixe.
 			this.pos = options.pos;
 			this.cursorOver = false;
 			this.imgRect;
@@ -61,7 +62,7 @@ sand.define('Case', [
 			this.el = this.div = r.toDOM({
 				tag : 'div.' + (options.prefix ? (options.prefix + "-") : "") + "case",
 				style : {
-					position : "relative", // IMPORTANT : ABSOLUTE OR RELATIVE
+					position : "absolute", // IMPORTANT : ABSOLUTE OR RELATIVE
 					overflow : "hidden",
 					width : options.width + 'px',
 					height : options.height + 'px',
@@ -101,7 +102,7 @@ sand.define('Case', [
 					}],
 				})
 
-				this.div.onmousedown = function (e) {
+				this.div.onmousedown = function (e) {// TEMPORARY : SHOULD USE SCOPE INSTEAD OF CHILDREN
 					e.preventDefault();
 					this.txtBloc.children[0].children[0].children[0].focus();
 				}.bind(this)
@@ -120,11 +121,8 @@ sand.define('Case', [
 				this.posClick = [this.img.width/2,this.img.height/2];
 				this.z = 0;
 
-				//this.div.onmousedown = function (e) {
 				this.start = function (e) {
-					e.preventDefault();
-					//e.stopPropagation();
-					console.log("ok")
+					console.log("ok");
 					this.clicking = true;
 					this.posClick[0] = e.xy[0]
 					this.posClick[1] = e.xy[1]
@@ -132,76 +130,67 @@ sand.define('Case', [
           this.states.push({ type : "caseAction", sState : {rect : jQuery.extend({},this.imgRect), left : this.img.style.left, top : this.img.style.top, width : this.img.style.width, height : this.img.style.height}});
 				}.bind(this)
 				
-				addEventListener("mouseup", function (e) {
-					this.clicking = false;
-				}.bind(this))
 
 				this.zoomEvent = function (e) {
-					//if(e.shiftKey || e.scale){
-						//e.preventDefault();
-						var delta = Math.max(-1, Math.min(1, (e.wheelDelta || -e.detail)));// 1 : mousewheelup, 2 : mousewheeldown
-						//var factor = (e.scale > 1 || delta > 0) ? 1.01 : 0.99;
-						//this.factor = ((this.deltaScale || e.scale) <= e.scale || delta > 0) ? 1.01 : 0.99;
-						var lf = this.lastFactor;
-						this.factor = e.scale/(this.lastScale || 1) * this.factor;
-						this.factor = this.factor/(this.lastFactor || 1);
-						this.lastFactor = this.factor;
-						//this.debugFactor = this.deltaScale - e.scale;
-						//this.deltaScale = e.scale || null;
-						this.lastScale = e.scale;
-						this.potentialRect = this.imgRect.move({staticPoint : this.staticPoint, scale : this.lastFactor});// Merci Geo
 						
-						if(e.touches && e.touches.length > 1) {
-							var tCenter = [0.5*(e.touches[0].clientX + e.touches[1].clientX),0.5*(e.touches[0].clientY+e.touches[1].clientY)]
+					var lf = this.lastFactor;
+					this.factor = e.scale/(this.lastScale || 1) * this.factor;
+					this.factor = this.factor/(this.lastFactor || 1);
+					this.lastFactor = this.factor || e.wheelDelta > 0 ? 1.05 : 0.95;
+					this.lastScale = e.scale;
+					
+					
+					if(e.touches && e.touches.length > 1) {
+						var tCenter = [0.5*(e.touches[0].clientX + e.touches[1].clientX) - $(this.div).offset().left ,0.5*(e.touches[0].clientY+e.touches[1].clientY  -  $(this.div).offset().top )]
+					}else {
+						var tCenter = [e.x - $(this.div).offset().left,e.y -  $(this.div).offset().top].add([document.body.scrollLeft, document.body.scrollTop]);
+					}
+
+					this.imgCenter = [parseInt(this.div.style.width)/2,parseInt(this.div.style.height)/2];
+					this.staticPoint = new r.Geo.Point([tCenter[0] || e.xy[0]  ,tCenter[1] || e.xy[1]]); //origine du referentiel du zoom = curseur
+					
+					this.potentialRect = this.imgRect.move({staticPoint : this.staticPoint, scale : this.lastFactor});// Merci Geo
+
+					if( (!this.fit && (( this.potentialRect.segX.length() >= this.divRect.segX.length() ) && ( this.potentialRect.segY.length() >= this.divRect.segY.length() ) ) ) ) {
+					
+						this.zoom(this.lastFactor);
+						this.fire('case:imageMovedPx',this.img.style.left,this.img.style.top,this.img.style.width,this.img.style.height);
+						this.fire('case:imageMovedInt',parseInt(this.img.style.left),parseInt(this.img.style.top),parseInt(this.img.style.width),parseInt(this.img.style.height));
+					
+					}else if (this.fit) {
+						if(!(Math.ceil(this.potentialRect.segX.c2) >= this.divRect.segX.c2 && Math.floor(this.potentialRect.segX.c1) <= this.divRect.segX.c1 && Math.floor(this.potentialRect.segY.c1) <= this.divRect.segY.c1 && Math.ceil(this.potentialRect.segY.c2) >= this.divRect.segY.c2 ) ) {
+						this.imgRect.setCenter(this.divRect.getCenter())
+						this.staticPoint = this.imgCenter
+						
+						this.zoom(this.lastFactor,2);
+						
+						this.fire('case:imageMovedPx',this.img.style.left,this.img.style.top,this.img.style.width,this.img.style.height);
+						this.fire('case:imageMovedInt',parseInt(this.img.style.left),parseInt(this.img.style.top),parseInt(this.img.style.width),parseInt(this.img.style.height));
 						}else {
-							var tCenter = [null,null];
+							this.zoom(this.lastFactor);
 						}
-
-						this.imgCenter = [parseInt(this.div.style.width)/2,parseInt(this.div.style.height)/2];
-						
-						this.staticPoint = new r.Geo.Point([( e.clientX /*|| e.center[0] */|| tCenter[0] || e.xy[0] ) - $(this.div).offset().left,( e.clientY /*|| e.center[1]*/ || tCenter[1] || e.xy[1]) -  $(this.div).offset().top]); //origine du referentiel du zoom = curseur
-
-						//console.log([( e.clientX /*|| e.center[0] */|| tCenter[0] || e.xy[0] ) - $(this.div).offset().left,( e.clientY /*|| e.center[1]*/ || tCenter[1] || e.xy[1]) -  $(this.div).offset().top]);
-						//this.staticPoint = this.staticPoint.inRef(this.imgRect.ref);//on dilate l'image en conservant statique la position du curseur -> on passe au référentiel de l'image
-						
-						
-						
-
-						if( (!this.fit && (( this.potentialRect.segX.length() >= this.divRect.segX.length() ) && ( this.potentialRect.segY.length() >= this.divRect.segY.length() ) ) ) ) {
-							this.zoom(this.factor);
-							
-							this.fire('case:imageMovedPx',this.img.style.left,this.img.style.top,this.img.style.width,this.img.style.height);
-							this.fire('case:imageMovedInt',parseInt(this.img.style.left),parseInt(this.img.style.top),parseInt(this.img.style.width),parseInt(this.img.style.height));
-						}else if (this.fit) {
-							
-							if(!(Math.ceil(this.potentialRect.segX.c2) >= this.divRect.segX.c2 && Math.floor(this.potentialRect.segX.c1) <= this.divRect.segX.c1 && Math.floor(this.potentialRect.segY.c1) <= this.divRect.segY.c1 && Math.ceil(this.potentialRect.segY.c2) >= this.divRect.segY.c2 ) ) {
-							this.imgRect.setCenter(this.divRect.getCenter())
-							this.staticPoint = this.imgCenter
-							this.zoom(this.factor,2);
-							
-							this.fire('case:imageMovedPx',this.img.style.left,this.img.style.top,this.img.style.width,this.img.style.height);
-							this.fire('case:imageMovedInt',parseInt(this.img.style.left),parseInt(this.img.style.top),parseInt(this.img.style.width),parseInt(this.img.style.height));
-							}else {
-								this.zoom(this.factor);
-								
-							}
-
-						}
-					//}
+					}
 				}
 
-				this.div.addEventListener('mousewheel', this.zoomEvent.bind(this))
+				this.div.addEventListener('mousewheel', function(e) {
+					if(e.shiftKey) this.zoomEvent(e)
+				}.bind(this))
 
-					this.drag = function(e) {
+				this.drag = function(e) {
 					if(this.clicking && !this.frozen) {
+						
 						this.staticPoint = new r.Geo.Point([e.xy[0] - this.div.offsetLeft, e.xy[1] - this.div.offsetTop].add([document.body.scrollLeft, document.body.scrollTop]));
 						this.staticPoint = this.staticPoint.inRef(this.imgRect.ref);
-						//var deltaX = e.xy[0] - this.posClick[0];
-						//var deltaY = e.xy[1] - this.posClick[1];
-						var delta = e.translation || [0,0]//[deltaX,deltaY];
+						
+						var deltaX = e.xy[0] - this.posClick[0];
+						var deltaY = e.xy[1] - this.posClick[1];
+						var delta = e.translation || [deltaX,deltaY] || [0,0]
+						
 						//this.debugDelta = delta;
-						this.debugScope.innerHTML = delta;
+						//this.debugScope.innerHTML = delta; //for mobile testing purpose
+						
 						this.potentialRect = this.imgRect.move({vector : delta});
+						
 						var lX = this.potentialRect.segX.length();
 						var lY = this.potentialRect.segY.length();
 
@@ -213,28 +202,21 @@ sand.define('Case', [
 						this.potentialRect.segX.c1 = this.potentialRect.segX.c2 - lX;
 						this.potentialRect.segY.c2 = Math.max(this.divRect.segY.c2,this.potentialRect.segY.c2);
 						this.potentialRect.segY.c1 = this.potentialRect.segY.c2 - lY;
-
-						//if ( (Math.ceil(this.potentialRect.segX.c2) >= this.divRect.segX.c2 && Math.floor(this.potentialRect.segX.c1) <= this.divRect.segX.c1 && Math.floor(this.potentialRect.segY.c1) <= this.divRect.segY.c1 && Math.ceil(this.potentialRect.segY.c2) >= this.divRect.segY.c2 ) ) {
-							this.img.style.left = this.potentialRect.segX.c1 + 'px';//(parseInt(this.img.style.left) + delta[0]) + 'px';
-							this.img.style.top = this.potentialRect.segY.c1 + 'px';//(parseInt(this.img.style.top) + delta[1]) + 'px';
-							this.imgRect = this.potentialRect;
-						//}
 						
+						this.img.style.left = this.potentialRect.segX.c1 + 'px';
+						this.img.style.top = this.potentialRect.segY.c1 + 'px';
+						this.imgRect = this.potentialRect;
 						
-
 						this.fire('case:imageMovedPx',this.img.style.left,this.img.style.top,this.img.style.width,this.img.style.height);
 						this.fire('case:imageMovedInt',parseInt(this.img.style.left),parseInt(this.img.style.top),parseInt(this.img.style.width),parseInt(this.img.style.height));
 					}
 					this.posClick[0] = e.xy[0]
 					this.posClick[1] = e.xy[1]
-
 				}.bind(this)
 
-				addEventListener("mousemove", this.div.onmousemove )
 
 				this.loadCase(true);
 
-				//this.states.push({lastAction : 'init', rect : this.imgRect, left : this.img.style.left, top : this.img.style.top, width : this.img.style.width, height : this.img.style.height});	
 				this.sState;
 				this.eState;
 
@@ -255,13 +237,14 @@ sand.define('Case', [
             	}.bind(this)
           });
 
-				if(this.factor && this.factor != 1) this.zoom(this.factor);
+			if(this.factor && this.factor != 1) this.zoom(this.factor); // WARNING : If you set a stupid factor as an input, then you'll get stupid zoom as an output
 
 			}	
 		},
 
 		zoom : function (factor) {// Merci Geo !
 			this.imgRect = this.imgRect.move({staticPoint : this.staticPoint, scale : factor});
+			console.log(factor);
 			this.img.style.width = this.imgRect.segX.getLength() + 'px';
 			this.img.style.height = this.imgRect.segY.getLength() + 'px';
 			this.img.style.left =  this.imgRect.segX.c1 + 'px';
@@ -270,16 +253,13 @@ sand.define('Case', [
 			if (!this.fit && !(this.imgRect.segX.c2 >= this.divRect.segX.c2 && this.imgRect.segX.c1 <= this.divRect.segX.c1 && this.imgRect.segY.c1 <= this.divRect.segY.c1 && this.imgRect.segY.c2 >= this.divRect.segY.c2)){
 				var fitImg = this.divRect.move({staticPoint : this.staticPoint}).forcedIn(this.imgRect);
 				
-				 this.imgRect.segX.c1 = this.imgRect.segX.c1 - fitImg.segX.c1;
-				 this.img.style.left =  this.imgRect.segX.c1 + 'px'; 
-				 this.imgRect.segY.c1 = this.imgRect.segY.c1 - fitImg.segY.c1;
-				 this.img.style.top =  this.imgRect.segY.c1 + 'px';
-				 this.imgRect.segY.c2 = this.imgRect.segY.c1 + parseInt(this.img.style.height);
-				 this.imgRect.segX.c2 = this.imgRect.segX.c1 + parseInt(this.img.style.width);
+				this.imgRect.segX.c1 = this.imgRect.segX.c1 - fitImg.segX.c1;
+				this.img.style.left =  this.imgRect.segX.c1 + 'px'; 
+				this.imgRect.segY.c1 = this.imgRect.segY.c1 - fitImg.segY.c1;
+				this.img.style.top =  this.imgRect.segY.c1 + 'px';
+				this.imgRect.segY.c2 = this.imgRect.segY.c1 + parseInt(this.img.style.height);
+				this.imgRect.segX.c2 = this.imgRect.segX.c1 + parseInt(this.img.style.width);
 			}
-			// WARNING : STATE SHOULD BE SAVED ELSEWHERE : WAY TOO MUCH VALUES	
-			//this.states.push({lastAction : 'zoom', rect : this.imgRect, left : this.img.style.left, top : this.img.style.top, width : this.img.style.width, height : this.img.style.height});	
-			
 		},
 
 		loadCase : function (firstLoad) {//methode permettant d'initialiser la position de l'image
