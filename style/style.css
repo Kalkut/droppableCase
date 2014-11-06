@@ -1,0 +1,19 @@
+.resources-bloc {
+  border: 1px solid black;
+  width: 800px;
+  height: 100px;
+  position: relative; }
+  .resources-bloc .resources {
+    border: 1px solid black;
+    width: 800px;
+    height: 100px; }
+    .resources-bloc .resources .resource {
+      float: left;
+      height: 80px;
+      width: 80px; }
+    .resources-bloc .resources .picto {
+      height: 60px;
+      width: 80px; }
+    .resources-bloc .resources .label {
+      height: 20px;
+      width: 80px; }
